@@ -1,0 +1,31 @@
+{
+  "updatedAt": "2026-10-18",
+  "source": "newsdata.io",
+  "trends": [
+    {
+      "id": "running",
+      "count": 53,
+      "reason": "최근 뉴스 53건에 등장했어요."
+    },
+    {
+      "id": "badminton",
+      "count": 37,
+      "reason": "최근 뉴스 37건에 등장했어요."
+    },
+    {
+      "id": "cycling",
+      "count": 36,
+      "reason": "최근 뉴스 36건에 등장했어요."
+    },
+    {
+      "id": "basketball",
+      "count": 32,
+      "reason": "최근 뉴스 32건에 등장했어요."
+    },
+    {
+      "id": "swimming",
+      "count": 31,
+      "reason": "최근 뉴스 31건에 등장했어요."
+    }
+  ]
+}
