@@ -2,8 +2,9 @@ name: Update trends
 
 on:
   schedule:
-    # 매주 월요일 09:00 (한국 시간) = 월요일 00:00 UTC
-    - cron: "0 0 * * 1"
+    # 매주 월요일 09:30 (한국 시간) = 월요일 00:30 UTC
+    # newsdata.io 하루 크레딧이 초기화되는 시각(00:00 UTC)과 겹치지 않게 30분 늦춘다
+    - cron: "30 0 * * 1"
   # Actions 탭의 "Run workflow" 버튼으로 수동 실행
   workflow_dispatch:
 

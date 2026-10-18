@@ -107,14 +107,16 @@ test("세부항목 모든 조합에서도 결과와 이유 문장이 정상이�
   assert.equal(checked, 5 * 4 * 3 * 4 * 4 * 324);
 });
 
-test("목적 여러 개: 하나만 맞아도 3점(쌓이지 않음), 고른 순서는 결과에 영향 없음, 이유에는 맞는 목적만", () => {
+test("목적 여러 개: 하나 맞으면 3점, 더 맞을수록 +1점, 고른 순서는 결과에 영향 없음, 이유에는 맞는 목적만", () => {
   const pilates = exercises.find((exercise) => exercise.id === "pilates"); // 목적: 유연성·자세, 근력
   const base = { activity: "상관없음", people: "상관없음", place: "상관없음", time: "상관없음", trendFirst: false };
 
   const [one] = recommend([pilates], { ...base, purpose: ["근력"] });
   const [two] = recommend([pilates], { ...base, purpose: ["근력", "유연성·자세", "다이어트"] });
+  const [none] = recommend([pilates], { ...base, purpose: ["다이어트", "사람 만나기"] });
   assert.equal(one.score, 3);
-  assert.equal(two.score, 3);
+  assert.equal(two.score, 4);
+  assert.equal(none.score, 0);
 
   const answers = { ...base, purpose: ["다이어트", "근력", "유연성·자세"] };
   assert.equal(buildReason(two, answers).main, "근력·자세 교정 목적에 잘 맞는 운동이에요.");

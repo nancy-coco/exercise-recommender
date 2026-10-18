@@ -4,28 +4,28 @@
   "trends": [
     {
       "id": "running",
-      "count": 56,
-      "reason": "최근 뉴스 56건에 등장했어요."
-    },
-    {
-      "id": "badminton",
-      "count": 38,
-      "reason": "최근 뉴스 38건에 등장했어요."
+      "count": 32,
+      "reason": "최근 생활 운동 뉴스 약 32건에 등장했어요."
     },
     {
       "id": "cycling",
-      "count": 36,
-      "reason": "최근 뉴스 36건에 등장했어요."
+      "count": 18,
+      "reason": "최근 생활 운동 뉴스 약 18건에 등장했어요."
     },
     {
-      "id": "basketball",
-      "count": 34,
-      "reason": "최근 뉴스 34건에 등장했어요."
+      "id": "walking",
+      "count": 17,
+      "reason": "최근 생활 운동 뉴스 약 17건에 등장했어요."
     },
     {
-      "id": "swimming",
-      "count": 30,
-      "reason": "최근 뉴스 30건에 등장했어요."
+      "id": "hiking",
+      "count": 7,
+      "reason": "최근 생활 운동 뉴스 약 7건에 등장했어요."
+    },
+    {
+      "id": "plogging",
+      "count": 6,
+      "reason": "최근 생활 운동 뉴스 약 6건에 등장했어요."
     }
   ]
 }

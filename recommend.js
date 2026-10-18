@@ -15,6 +15,8 @@ const WEIGHTS = {
 };
 
 const TREND_BONUS = 2;
+// 여러 개 고른 답(목적)이 2개 이상 맞으면, 첫 번째 이후 하나당 더 주는 점수
+const EXTRA_MATCH_BONUS = 1;
 const ANY = "상관없음";
 const LOW_IMPACT_ONLY = "관절·허리 부담 적은 운동만";
 
@@ -35,9 +37,10 @@ function scoreExercise(exercise, answers, trendIds) {
     const values = toList(answers[key]);
     // 답하지 않았거나 "상관없음"이면 점수 계산에서 제외
     if (values.length === 0 || values.includes(ANY)) return;
-    // 여러 개를 골랐으면 하나만 맞아도 점수를 준다 (여러 개 맞아도 쌓이지 않는다)
-    if (values.some((value) => matchesField(exercise, key, value))) {
-      score += weight;
+    // 여러 개를 골랐으면 하나만 맞아도 기본 점수, 더 맞을수록 하나당 EXTRA_MATCH_BONUS를 더한다
+    const matchCount = values.filter((value) => matchesField(exercise, key, value)).length;
+    if (matchCount > 0) {
+      score += weight + (matchCount - 1) * EXTRA_MATCH_BONUS;
       matched.push(key);
     }
   });

@@ -1,4 +1,5 @@
-// 주 1회 실행: newsdata.io에서 운동별 최근 한국어 뉴스 수를 세어 data/trends.json을 만든다
+// 주 1회 실행: newsdata.io에서 운동별 최근 한국어 뉴스를 모아, 생활 운동 기사 수로 data/trends.json을 만든다
+// 프로·국가대표 경기 기사(예: 국제대회 결승, 전국체전)는 "사람들이 요즘 하는 운동"과 달라서 뺀다
 // 실행: node --env-file=.env scripts/update-trends.js   (GitHub Actions에서는 Secrets로 키를 넣는다)
 // 호출이 하나라도 실패하면 기존 trends.json을 그대로 두고 실패로 끝낸다
 
@@ -11,6 +12,31 @@ const TRENDS_PATH = path.join(__dirname, "..", "data", "trends.json");
 const TOP_COUNT = 5;
 const REQUEST_GAP_MS = 300;
 const MAX_QUERY_LENGTH = 100; // 무료 플랜의 검색어 길이 제한
+const MAX_PAGES = 2; // 운동당 최대 20개 기사를 표본으로 본다 (무료 플랜은 한 번에 10개)
+const MAX_RATE_LIMIT_WAIT_MS = 16 * 60 * 1000;
+
+// 제목·요약에 이런 말이 있으면 프로·엘리트 경기 기사로 보고 뺀다
+// "대회", "오픈", "프로", "시즌"처럼 생활 운동 기사에도 흔한 말은 넣지 않는다 (예: 마라톤 대회, 헬스장 오픈, 프로그램)
+const PRO_SPORTS_TERMS = [
+  "국가대표", "대표팀", "대표선수", "선수단", "결승", "준결승", "4강", "8강", "16강", "우승", "준우승",
+  "연승", "연패", "금메달", "은메달", "동메달", "메달", "세계선수권", "선수권", "올림픽", "아시안게임",
+  "전국체전", "체전", "월드컵", "그랜드슬램", "리그", "KBL", "WKBL", "KBO", "NBA",
+  "프로팀", "프로농구", "프로배구", "프로축구", "구단", "감독", "이적", "드래프트", "세계랭킹",
+  "득점", "시상식", "MVP", "우수선수",
+];
+
+const articleText = ({ title, description }) => `${title ?? ""} ${description ?? ""}`;
+
+function isLeisureArticle(article) {
+  const text = articleText(article);
+  return !PRO_SPORTS_TERMS.some((term) => text.includes(term));
+}
+
+// 검색은 기사 본문 전체에서 이뤄져서 운동과 상관없는 기사도 섞인다. 제목·요약에 검색어가 있어야 센다
+function mentionsKeyword(article, keywords) {
+  const text = articleText(article);
+  return keywords.some((keyword) => text.includes(keyword.replaceAll('"', "")));
+}
 
 // 운동별 검색어. 다른 뜻으로 많이 쓰이는 단어는 피한다 (예: "러닝" → 머신러닝, "바레" → 바레인)
 const TREND_KEYWORDS = {
@@ -25,7 +51,7 @@ const TREND_KEYWORDS = {
   "weight-training": ['"웨이트 트레이닝"', "웨이트트레이닝"],
   crossfit: ["크로스핏"],
   climbing: ["클라이밍", "볼더링"],
-  swimming: ["수영"],
+  swimming: ["수영장", '"수영 강습"', "생존수영"], // "수영"만 쓰면 같은 이름의 연예인 기사가 섞인다
   "aqua-aerobics": ["아쿠아로빅"],
   cycling: ["자전거", "라이딩"],
   "indoor-cycling": ["스피닝", '"실내 사이클"'],
@@ -78,22 +104,56 @@ function rankTrends(counts, exercises, topCount = TOP_COUNT) {
     .filter(({ count }) => count > 0)
     .sort((a, b) => b.count - a.count)
     .slice(0, topCount)
-    .map(({ id, count }) => ({ id, count, reason: `최근 뉴스 ${count}건에 등장했어요.` }));
+    .map(({ id, count }) => ({ id, count, reason: `최근 생활 운동 뉴스 약 ${count}건에 등장했어요.` }));
 }
 
-async function countNews(keywords, { apiKey, fetchImpl }) {
+// 표본 기사 중 생활 운동 기사 비율을 전체 기사 수에 곱해 추정한다
+function estimateLeisureCount({ total, sampled, leisure }) {
+  if (sampled === 0) return 0;
+  return Math.round((leisure / sampled) * total);
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchPage(keywords, page, { apiKey, fetchImpl, waitImpl = wait }) {
   const params = new URLSearchParams({ apikey: apiKey, q: buildQuery(keywords), language: "ko" });
-  const response = await fetchImpl(`${API_URL}?${params}`);
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body.status !== "success") {
+  if (page) params.set("page", page);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetchImpl(`${API_URL}?${params}`);
+    const body = await response.json().catch(() => ({}));
+    if (response.ok && body.status === "success") return body;
+
+    // 요청 한도(짧은 시간 안 요청 수)에 걸리면 초기화 시각까지 기다렸다가 한 번만 다시 시도한다
+    const resetAt = Number(response.headers?.get?.("x-ratelimit-reset"));
+    if (response.status === 429 && attempt === 0 && resetAt) {
+      const waitMs = Math.min(Math.max(resetAt * 1000 - Date.now(), 0) + 1000, MAX_RATE_LIMIT_WAIT_MS);
+      console.log(`요청 한도 도달, ${Math.ceil(waitMs / 1000)}초 기다립니다.`);
+      await waitImpl(waitMs);
+      continue;
+    }
     // 에러 메시지에 키가 섞여 나오지 않도록 응답 본문의 메시지만 남긴다
     const message = body.results?.message ?? body.message ?? `HTTP ${response.status}`;
     throw new Error(`newsdata.io 요청 실패 (${keywords.join(", ")}): ${message}`);
   }
-  return body.totalResults ?? 0;
+  throw new Error(`newsdata.io 요청 실패 (${keywords.join(", ")}): 요청 한도`);
 }
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function countNews(keywords, options) {
+  let total = 0;
+  const articles = [];
+  let page;
+  for (let i = 0; i < (options.maxPages ?? MAX_PAGES); i += 1) {
+    const body = await fetchPage(keywords, page, options);
+    total = body.totalResults ?? 0;
+    articles.push(...(body.results ?? []));
+    page = body.nextPage;
+    if (!page || articles.length >= total) break;
+    await wait(options.gapMs ?? REQUEST_GAP_MS);
+  }
+  const leisure = articles.filter((article) => mentionsKeyword(article, keywords) && isLeisureArticle(article)).length;
+  return { total, sampled: articles.length, leisure, count: estimateLeisureCount({ total, sampled: articles.length, leisure }) };
+}
 
 async function updateTrends({
   apiKey = process.env.NEWSDATA_API_KEY,
@@ -102,6 +162,7 @@ async function updateTrends({
   outPath = TRENDS_PATH,
   now = new Date(),
   gapMs = REQUEST_GAP_MS,
+  maxPages = MAX_PAGES,
   log = console.log,
 } = {}) {
   if (!apiKey) throw new Error("NEWSDATA_API_KEY 환경변수가 없습니다. .env 또는 GitHub Secrets를 확인하세요.");
@@ -110,8 +171,9 @@ async function updateTrends({
   for (const { id } of exercises) {
     const keywords = TREND_KEYWORDS[id];
     if (!keywords) throw new Error(`${id}의 검색어(TREND_KEYWORDS)가 없습니다.`);
-    counts[id] = await countNews(keywords, { apiKey, fetchImpl });
-    log(`${id}: ${counts[id]}건`);
+    const result = await countNews(keywords, { apiKey, fetchImpl, gapMs, maxPages });
+    counts[id] = result.count;
+    log(`${id}: 전체 ${result.total}건, 표본 ${result.sampled}건 중 생활 운동 ${result.leisure}건 → 약 ${result.count}건`);
     await wait(gapMs);
   }
 
@@ -133,4 +195,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { TREND_KEYWORDS, buildQuery, todayInKorea, rankTrends, updateTrends };
+module.exports = { TREND_KEYWORDS, buildQuery, todayInKorea, rankTrends, isLeisureArticle, mentionsKeyword, estimateLeisureCount, updateTrends };
