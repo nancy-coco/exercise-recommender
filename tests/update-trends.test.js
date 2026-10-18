@@ -9,6 +9,8 @@ const {
   buildQuery,
   todayInKorea,
   rankTrends,
+  findPreviousSnapshot,
+  addSnapshot,
   isLeisureArticle,
   mentionsKeyword,
   estimateLeisureCount,
@@ -46,7 +48,15 @@ function tempTrendsFile() {
   return file;
 }
 
-const options = (overrides) => ({ apiKey: "test-key", exercises, gapMs: 0, log: () => {}, ...overrides });
+function tempHistoryFile(snapshots = []) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "history-"));
+  const file = path.join(dir, "trend-history.json");
+  fs.writeFileSync(file, JSON.stringify({ snapshots }));
+  return file;
+}
+
+// 테스트가 실제 data/trend-history.json을 건드리지 않도록 매번 임시 파일을 쓴다
+const options = (overrides) => ({ apiKey: "test-key", exercises, gapMs: 0, log: () => {}, historyPath: tempHistoryFile(), ...overrides });
 
 test("모든 운동에 검색어가 있고, 무료 플랜 길이 제한(100자) 안에 든다", () => {
   exercises.forEach(({ id }) => {
@@ -141,4 +151,63 @@ test("API 키가 없으면 요청 없이 실패한다", async () => {
   };
   await assert.rejects(updateTrends(options({ apiKey: "", fetchImpl, outPath: tempTrendsFile() })), /NEWSDATA_API_KEY/);
   assert.equal(called, false);
+});
+
+test("지난주 대비: 많이 늘어난 운동이 위로 가고, 작은 숫자 변화는 과하게 커지지 않는다", () => {
+  const counts = { running: 32, plogging: 20, walking: 17, "jump-rope": 3, hiking: 6 };
+  const previous = { running: 30, plogging: 2, walking: 17, "jump-rope": 1 }; // hiking은 지난주 0건
+  const trends = rankTrends(counts, exercises, previous);
+
+  // plogging: 20 × (25/7) ≈ 71 > running: 32 × (37/35) ≈ 34 > walking: 17 > hiking: 6 × (11/5) ≈ 13 > jump-rope: 3 × (8/6) = 4
+  assert.deepEqual(trends.map((trend) => trend.id), ["plogging", "running", "walking", "hiking", "jump-rope"]);
+  const byId = Object.fromEntries(trends.map((trend) => [trend.id, trend]));
+  assert.equal(byId.plogging.reason, "지난주보다 뉴스가 900% 늘었어요. (2건 → 20건)");
+  assert.equal(byId.walking.reason, "최근 생활 운동 뉴스 약 17건에 등장했어요.");
+  assert.equal(byId.hiking.reason, "이번 주 생활 운동 뉴스에 새로 등장했어요. (약 6건)");
+  assert.equal(byId.plogging.previous, 2);
+});
+
+test("지난 기록이 없으면 뉴스 수 순서이고 previous를 남기지 않는다", () => {
+  const trends = rankTrends({ running: 10, plogging: 20 }, exercises);
+  assert.deepEqual(trends.map((trend) => trend.id), ["plogging", "running"]);
+  assert.equal("previous" in trends[0], false);
+});
+
+test("5일 이상 지난 기록 중 가장 최근 것과 비교하고, 기록은 같은 날 덮어쓰며 8개까지만 남긴다", () => {
+  const history = { snapshots: [{ date: "2026-10-12" }, { date: "2026-10-05" }, { date: "2026-10-17" }] };
+  assert.equal(findPreviousSnapshot(history, "2026-10-19").date, "2026-10-12");
+  assert.equal(findPreviousSnapshot({ snapshots: [{ date: "2026-10-17" }] }, "2026-10-19"), null);
+
+  const replaced = addSnapshot({ snapshots: [{ date: "2026-10-19", counts: { yoga: 1 } }] }, { date: "2026-10-19", counts: { yoga: 2 } });
+  assert.deepEqual(replaced.snapshots, [{ date: "2026-10-19", counts: { yoga: 2 } }]);
+
+  const many = { snapshots: Array.from({ length: 8 }, (_, i) => ({ date: `2026-08-0${i + 1}` })) };
+  const trimmed = addSnapshot(many, { date: "2026-10-19" });
+  assert.equal(trimmed.snapshots.length, 8);
+  assert.equal(trimmed.snapshots.at(-1).date, "2026-10-19");
+  assert.equal(trimmed.snapshots[0].date, "2026-08-02");
+});
+
+test("실행하면 지난 기록과 비교해 trends.json을 쓰고, 오늘 기록을 history에 쌓는다", async () => {
+  const outPath = tempTrendsFile();
+  const historyPath = tempHistoryFile([{ date: "2026-10-12", counts: { climbing: 1, futsal: 4 } }]);
+  const fetchImpl = fakeFetch({ climbing: { total: 9, articles: leisure(9, "볼더링") }, futsal: { total: 4, articles: leisure(4, "풋살") } });
+  await updateTrends(options({ outPath, historyPath, fetchImpl, now: new Date("2026-10-19T03:00:00Z") }));
+
+  const saved = JSON.parse(fs.readFileSync(outPath, "utf8"));
+  assert.equal(saved.comparedWith, "2026-10-12");
+  assert.equal(saved.trends[0].reason, "지난주보다 뉴스가 800% 늘었어요. (1건 → 9건)");
+
+  const history = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+  assert.deepEqual(history.snapshots.map((snapshot) => snapshot.date), ["2026-10-12", "2026-10-19"]);
+  assert.equal(history.snapshots[1].counts.climbing, 9);
+  assert.equal(history.snapshots[1].counts.yoga, 0);
+});
+
+test("실패하면 history도 그대로 둔다", async () => {
+  const historyPath = tempHistoryFile([{ date: "2026-10-12", counts: { yoga: 3 } }]);
+  const before = fs.readFileSync(historyPath, "utf8");
+  const fetchImpl = fakeFetch({ yoga: { total: 5, articles: leisure(5, "요가") } }, { failOn: "golf" });
+  await assert.rejects(updateTrends(options({ outPath: tempTrendsFile(), historyPath, fetchImpl })));
+  assert.equal(fs.readFileSync(historyPath, "utf8"), before);
 });

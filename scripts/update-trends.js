@@ -1,7 +1,8 @@
 // 주 1회 실행: newsdata.io에서 운동별 최근 한국어 뉴스를 모아, 생활 운동 기사 수로 data/trends.json을 만든다
 // 프로·국가대표 경기 기사(예: 국제대회 결승, 전국체전)는 "사람들이 요즘 하는 운동"과 달라서 뺀다
 // 실행: node --env-file=.env scripts/update-trends.js   (GitHub Actions에서는 Secrets로 키를 넣는다)
-// 호출이 하나라도 실패하면 기존 trends.json을 그대로 두고 실패로 끝낸다
+// 운동별 뉴스 수는 data/trend-history.json에 매주 쌓고, 지난주보다 늘어난 운동에 가산점을 준다
+// 호출이 하나라도 실패하면 기존 trends.json·trend-history.json을 그대로 두고 실패로 끝낸다
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -9,7 +10,11 @@ const path = require("node:path");
 const API_URL = "https://newsdata.io/api/1/latest";
 const EXERCISES_PATH = path.join(__dirname, "..", "data", "exercises.json");
 const TRENDS_PATH = path.join(__dirname, "..", "data", "trends.json");
+const HISTORY_PATH = path.join(__dirname, "..", "data", "trend-history.json");
 const TOP_COUNT = 5;
+const HISTORY_SIZE = 8; // 최근 8번(약 2달) 기록만 보관
+const MIN_COMPARE_DAYS = 5; // 이만큼 지난 기록과만 비교한다 (같은 주에 다시 실행해도 엉뚱하게 비교하지 않게)
+const GROWTH_SMOOTHING = 5; // 1건 → 3건 같은 작은 숫자의 증가율이 과하게 커지지 않도록 더하는 값
 const REQUEST_GAP_MS = 300;
 const MAX_QUERY_LENGTH = 100; // 무료 플랜의 검색어 길이 제한
 const MAX_PAGES = 2; // 운동당 최대 20개 기사를 표본으로 본다 (무료 플랜은 한 번에 10개)
@@ -97,14 +102,65 @@ function todayInKorea(now = new Date()) {
   return now.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 }
 
-// 뉴스가 많이 나온 순으로 상위 운동을 고른다. 0건은 제외하고, 동점이면 exercises.json 순서
-function rankTrends(counts, exercises, topCount = TOP_COUNT) {
+// 증가 배율: (이번 주 + 보정값) / (지난번 + 보정값). 지난 기록이 없으면 1
+function growthRatio(count, previous) {
+  if (previous === null) return 1;
+  return (count + GROWTH_SMOOTHING) / (previous + GROWTH_SMOOTHING);
+}
+
+function trendReason(count, previous) {
+  if (previous === null || count <= previous) return `최근 생활 운동 뉴스 약 ${count}건에 등장했어요.`;
+  if (previous === 0) return `이번 주 생활 운동 뉴스에 새로 등장했어요. (약 ${count}건)`;
+  const percent = Math.round(((count - previous) / previous) * 100);
+  return `지난주보다 뉴스가 ${percent}% 늘었어요. (${previous}건 → ${count}건)`;
+}
+
+// 순위 점수 = 이번 주 뉴스 수 × 증가 배율. 많이 나오면서 늘어나는 운동이 위로 간다
+// previousCounts가 없으면(첫 실행) 뉴스 수 순서와 같다. 0건은 제외하고, 동점이면 뉴스 수, 그다음 exercises.json 순서
+function rankTrends(counts, exercises, previousCounts = null, topCount = TOP_COUNT) {
   return exercises
-    .map(({ id }) => ({ id, count: counts[id] ?? 0 }))
+    .map(({ id }) => {
+      const count = counts[id] ?? 0;
+      const previous = previousCounts ? (previousCounts[id] ?? 0) : null;
+      return { id, count, previous, score: count * growthRatio(count, previous) };
+    })
     .filter(({ count }) => count > 0)
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => b.score - a.score || b.count - a.count)
     .slice(0, topCount)
-    .map(({ id, count }) => ({ id, count, reason: `최근 생활 운동 뉴스 약 ${count}건에 등장했어요.` }));
+    .map(({ id, count, previous }) => ({
+      id,
+      count,
+      ...(previous === null ? {} : { previous }),
+      reason: trendReason(count, previous),
+    }));
+}
+
+const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86400000);
+
+// 오늘보다 MIN_COMPARE_DAYS일 이상 앞선 가장 최근 기록
+function findPreviousSnapshot(history, today) {
+  return (
+    [...history.snapshots]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .find((snapshot) => daysBetween(snapshot.date, today) >= MIN_COMPARE_DAYS) ?? null
+  );
+}
+
+// 오늘 기록을 추가한다 (같은 날 다시 실행하면 덮어쓰기), 최근 HISTORY_SIZE개만 남긴다
+function addSnapshot(history, snapshot) {
+  const snapshots = history.snapshots.filter((item) => item.date !== snapshot.date);
+  snapshots.push(snapshot);
+  snapshots.sort((a, b) => a.date.localeCompare(b.date));
+  return { snapshots: snapshots.slice(-HISTORY_SIZE) };
+}
+
+function readHistory(historyPath) {
+  try {
+    const history = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+    return Array.isArray(history.snapshots) ? history : { snapshots: [] };
+  } catch {
+    return { snapshots: [] };
+  }
 }
 
 // 표본 기사 중 생활 운동 기사 비율을 전체 기사 수에 곱해 추정한다
@@ -160,6 +216,7 @@ async function updateTrends({
   fetchImpl = fetch,
   exercises = JSON.parse(fs.readFileSync(EXERCISES_PATH, "utf8")),
   outPath = TRENDS_PATH,
+  historyPath = HISTORY_PATH,
   now = new Date(),
   gapMs = REQUEST_GAP_MS,
   maxPages = MAX_PAGES,
@@ -177,12 +234,22 @@ async function updateTrends({
     await wait(gapMs);
   }
 
-  const trends = rankTrends(counts, exercises);
+  const today = todayInKorea(now);
+  const history = readHistory(historyPath);
+  const previous = findPreviousSnapshot(history, today);
+  const trends = rankTrends(counts, exercises, previous?.counts ?? null);
   if (trends.length === 0) throw new Error("모든 운동의 뉴스가 0건입니다. 기존 trends.json을 유지합니다.");
+  log(previous ? `${previous.date} 기록과 비교했어요.` : "비교할 지난 기록이 없어 뉴스 수로만 순위를 정했어요.");
 
-  const result = { updatedAt: todayInKorea(now), source: "newsdata.io", trends };
+  const result = {
+    updatedAt: today,
+    source: "newsdata.io",
+    ...(previous ? { comparedWith: previous.date } : {}),
+    trends,
+  };
   // 전부 성공했을 때만 파일을 덮어쓴다
   fs.writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`);
+  fs.writeFileSync(historyPath, `${JSON.stringify(addSnapshot(history, { date: today, counts }), null, 2)}\n`);
   return result;
 }
 
@@ -195,4 +262,15 @@ if (require.main === module) {
     });
 }
 
-module.exports = { TREND_KEYWORDS, buildQuery, todayInKorea, rankTrends, isLeisureArticle, mentionsKeyword, estimateLeisureCount, updateTrends };
+module.exports = {
+  TREND_KEYWORDS,
+  buildQuery,
+  todayInKorea,
+  rankTrends,
+  findPreviousSnapshot,
+  addSnapshot,
+  isLeisureArticle,
+  mentionsKeyword,
+  estimateLeisureCount,
+  updateTrends,
+};

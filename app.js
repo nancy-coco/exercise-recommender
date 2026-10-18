@@ -216,6 +216,14 @@ function renderTrends({ updatedAt, trends }, exercises) {
     const name = document.createElement("p");
     name.className = "trend-name";
     name.textContent = namesById.get(trend.id);
+    // 지난주보다 늘어난 운동에는 증가율 배지를 붙인다 (지난 기록이 없으면 previous가 없다)
+    if (typeof trend.previous === "number" && trend.count > trend.previous) {
+      const rise = document.createElement("span");
+      rise.className = "rise";
+      rise.textContent =
+        trend.previous === 0 ? "NEW" : `📈 +${Math.round(((trend.count - trend.previous) / trend.previous) * 100)}%`;
+      name.append(" ", rise);
+    }
     const reason = document.createElement("p");
     reason.className = "trend-reason";
     reason.textContent = trend.reason;
