@@ -736,34 +736,66 @@ async function drawResultImage() {
   return canvas;
 }
 
+// 카카오톡·인스타그램 등 앱 안의 브라우저는 파일 다운로드·파일 공유를 제대로 지원하지 않는 경우가 많다
+const isInAppBrowser = () => /KAKAOTALK|Instagram|FBAN|FBAV|NAVER|Line\/|DaumApps|everytimeApp/i.test(navigator.userAgent);
+
+// 어디서든 동작하는 마지막 방법: 이미지를 화면에 띄워 길게 눌러 저장하게 한다
+function showImageModal(canvas) {
+  document.getElementById("image-modal-img").src = canvas.toDataURL("image/png");
+  document.getElementById("image-modal").hidden = false;
+  setStatus("");
+}
+
+function closeImageModal() {
+  document.getElementById("image-modal").hidden = true;
+}
+
 async function saveImage() {
   setStatus("이미지를 만드는 중이에요…");
   const canvas = await drawResultImage();
+  const isTouch = window.matchMedia("(pointer: coarse)").matches;
+  if (isInAppBrowser()) {
+    showImageModal(canvas);
+    return;
+  }
+
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-  const fileName = "내-운동-유형.png";
+  if (!blob) {
+    showImageModal(canvas);
+    return;
+  }
+  // 한글 파일 이름을 제대로 다루지 못하는 기기가 있어 영문 이름을 쓴다
+  const fileName = "my-workout-type.png";
   const file = new File([blob], fileName, { type: "image/png" });
 
-  // 휴대폰에서는 공유창(사진 저장·인스타·카톡)을, PC에서는 파일 다운로드를 쓴다
-  const isTouch = window.matchMedia("(pointer: coarse)").matches;
-  if (isTouch && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: "내 운동 유형" });
-      setStatus("");
-      return;
-    } catch (error) {
-      if (error.name === "AbortError") {
+  // 휴대폰: 공유창(사진 저장·인스타·카톡). 지원하지 않거나 실패하면 길게 눌러 저장하는 화면을 띄운다
+  if (isTouch) {
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
         setStatus("");
         return;
+      } catch (error) {
+        if (error.name === "AbortError") {
+          setStatus("");
+          return;
+        }
       }
     }
+    showImageModal(canvas);
+    return;
   }
+
+  // PC: 파일 다운로드. 링크를 문서에 붙였다가 떼고, 임시 주소는 다운로드가 끝날 만큼 넉넉히 기다린 뒤 지운다
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;
+  document.body.append(link);
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  setStatus("이미지를 저장했어요!");
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  setStatus("이미지를 저장했어요! 다운로드 폴더를 확인해 주세요.");
 }
 
 function restart() {
@@ -791,6 +823,7 @@ document.addEventListener("click", (event) => {
     share: shareResult,
     invite: inviteFriend,
     "save-image": saveImage,
+    "close-image": closeImageModal,
     "toggle-text-size": toggleTextSize,
   };
   const action = event.target.closest("[data-action]")?.dataset.action;

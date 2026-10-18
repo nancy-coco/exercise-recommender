@@ -141,6 +141,15 @@
     </section>
   </main>
 
+  <!-- 이미지 저장이 안 되는 환경(앱 안 브라우저 등)용: 이미지를 길게 눌러 저장 -->
+  <div id="image-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="image-modal-title" hidden>
+    <div class="modal-card">
+      <p id="image-modal-title" class="modal-title">이미지를 <strong>길게 눌러</strong> 저장하세요</p>
+      <img id="image-modal-img" class="modal-img" alt="나의 운동 유형과 추천 운동 TOP 3 이미지" />
+      <button type="button" class="btn btn-secondary btn-block" data-action="close-image">닫기</button>
+    </div>
+  </div>
+
   <script src="recommend.js"></script>
   <script src="sprites.js"></script>
   <script src="app.js"></script>
