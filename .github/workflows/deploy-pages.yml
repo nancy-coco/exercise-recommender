@@ -1,0 +1,56 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # 봇이 trends.json을 커밋해도 push 이벤트가 안 생기므로, 트렌드 갱신이 끝나면 따로 배포한다
+  workflow_run:
+    workflows: ["Update trends"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # 트렌드 갱신이 실패했으면 배포하지 않는다
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # 테스트가 하나라도 실패하면 배포를 멈춘다
+      - name: Run tests
+        run: npm test
+
+      # 사이트에 필요한 파일만 모아서 올린다 (PRD, 테스트, 스크립트 제외)
+      - name: Collect site files
+        run: |
+          mkdir _site
+          cp index.html style.css app.js recommend.js sprites.js _site/
+          cp -r data _site/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

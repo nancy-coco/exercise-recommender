@@ -1,0 +1,13 @@
+{
+  "name": "exercise-recommender",
+  "private": true,
+  "description": "성향 질문 5개로 요즘 뜨는 운동까지 반영해 맞는 운동 3개를 추천하는 웹사이트",
+  "scripts": {
+    "start": "npx -y http-server -p 5173 -c-1",
+    "test": "node --test tests/recommend.test.js tests/sprites.test.js tests/update-trends.test.js",
+    "update-trends": "node --env-file=.env scripts/update-trends.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  }
+}

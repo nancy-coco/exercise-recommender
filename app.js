@@ -86,6 +86,47 @@ function renderTrendMessage(message) {
   document.getElementById("trend-list").replaceChildren(item);
 }
 
+// 필수 질문 선택지 앞에 붙는 이모지
+const OPTION_EMOJI = {
+  다이어트: "🔥",
+  근력: "💪",
+  "유연성·자세": "🧘",
+  "스트레스 해소": "🌿",
+  "사람 만나기": "🤝",
+  "정적·가볍게": "🍃",
+  적당히: "🚶",
+  "동적·땀 흠뻑": "💦",
+  혼자: "🙋",
+  함께: "👯",
+  상관없음: "🤷",
+  집: "🏠",
+  "헬스장·스튜디오": "🏢",
+  야외: "🌳",
+  "15분 이하": "⏱️",
+  "30분": "⏰",
+  "1시간 이상": "⌛",
+};
+
+const PARADE_IDS = ["running", "yoga", "climbing", "badminton", "cycling"];
+
+function renderParade() {
+  const parade = document.getElementById("hero-parade");
+  parade.replaceChildren(
+    ...PARADE_IDS.map((id, index) => {
+      const sprite = createSprite(id, "");
+      sprite.style.setProperty("--i", index);
+      return sprite;
+    })
+  );
+}
+
+// 같은 요소에 등장 애니메이션을 다시 재생한다
+function replayAnimation(element) {
+  element.style.animation = "none";
+  void element.offsetWidth;
+  element.style.animation = "";
+}
+
 function renderTrends({ updatedAt, trends }, exercises) {
   document.getElementById("trend-date").textContent = updatedAt ? formatDate(updatedAt) : "";
 
@@ -116,16 +157,32 @@ function renderTrends({ updatedAt, trends }, exercises) {
     reason.textContent = trend.reason;
     body.append(name, reason);
 
-    item.append(rank, body);
+    item.append(rank, createSprite(trend.id, `${namesById.get(trend.id)} 하는 픽셀 캐릭터`), body);
     list.append(item);
   });
 }
 
-function createOptionButton(key, value) {
+function createOptionButton(key, value, { rich = false } = {}) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "option";
-  button.textContent = value;
+  if (rich) {
+    // 필수 질문은 이모지 + 글자 + 체크 표시가 있는 카드 형태
+    const emoji = document.createElement("span");
+    emoji.className = "option-emoji";
+    emoji.setAttribute("aria-hidden", "true");
+    emoji.textContent = OPTION_EMOJI[value] ?? "•";
+    const label = document.createElement("span");
+    label.className = "option-label";
+    label.textContent = value;
+    const check = document.createElement("span");
+    check.className = "option-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = "✓";
+    button.append(emoji, label, check);
+  } else {
+    button.textContent = value;
+  }
   button.dataset.key = key;
   button.dataset.value = value;
   const selected = answers[key] === value;
@@ -144,16 +201,20 @@ function renderProgress() {
 
 function renderQuestionStep() {
   const isFinish = currentStep === FINISH_STEP;
-  document.getElementById("step-question").hidden = isFinish;
-  document.getElementById("step-finish").hidden = !isFinish;
+  const questionStep = document.getElementById("step-question");
+  const finishStep = document.getElementById("step-finish");
+  questionStep.hidden = isFinish;
+  finishStep.hidden = !isFinish;
+  replayAnimation(isFinish ? finishStep : questionStep);
   renderProgress();
 
   if (isFinish) return;
 
   const question = REQUIRED_QUESTIONS[currentStep];
+  document.getElementById("step-label").textContent = `Q${currentStep + 1}`;
   document.getElementById("question-title").textContent = question.title;
   const options = document.getElementById("question-options");
-  options.replaceChildren(...question.options.map((value) => createOptionButton(question.key, value)));
+  options.replaceChildren(...question.options.map((value) => createOptionButton(question.key, value, { rich: true })));
 }
 
 function renderDetailQuestions() {
@@ -180,6 +241,9 @@ function renderDetailQuestions() {
 }
 
 function startQuiz() {
+  // 공유 링크로 들어왔다가 다시 하면 주소의 답도 지운다
+  if (location.search) history.replaceState(null, "", location.pathname);
+  document.getElementById("result-sub").textContent = RESULT_SUB_DEFAULT;
   answers = createAnswers();
   currentStep = 0;
   document.getElementById("detail-box").open = false;
@@ -214,27 +278,33 @@ function selectOption(button) {
   renderQuestionStep();
 }
 
-function createResultCard(result) {
+function createResultCard(result, index) {
   const { exercise, isTrend } = result;
   const { main, extras } = buildReason(result, answers);
 
   const card = document.createElement("li");
   card.className = "card result-card";
+  card.classList.toggle("is-best", index === 0);
+  card.style.setProperty("--i", index);
 
   const sprite = createSprite(exercise.id, `${exercise.name} 하는 픽셀 캐릭터`);
 
-  const head = document.createElement("div");
-  head.className = "result-head";
-  const name = document.createElement("h3");
-  name.className = "result-name";
-  name.textContent = exercise.name;
-  head.append(name);
+  const meta = document.createElement("div");
+  meta.className = "result-meta";
+  const rank = document.createElement("span");
+  rank.className = "rank";
+  rank.textContent = index === 0 ? "BEST" : `${index + 1}위`;
+  meta.append(rank);
   if (isTrend) {
     const badge = document.createElement("span");
     badge.className = "badge";
     badge.textContent = "🔥 요즘 뜨는";
-    head.append(badge);
+    meta.append(badge);
   }
+
+  const name = document.createElement("h3");
+  name.className = "result-name";
+  name.textContent = exercise.name;
 
   const desc = document.createElement("p");
   desc.className = "result-desc";
@@ -246,16 +316,23 @@ function createResultCard(result) {
   reasonMain.textContent = main;
   reason.append(reasonMain);
   if (extras.length > 0) {
-    const reasonExtra = document.createElement("p");
-    reasonExtra.className = "result-extra";
-    reasonExtra.textContent = extras.join(" · ");
-    reason.append(reasonExtra);
+    const tags = document.createElement("div");
+    tags.className = "tags";
+    tags.append(
+      ...extras.map((text) => {
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = text;
+        return tag;
+      })
+    );
+    reason.append(tags);
   }
 
   const intro = document.createElement("div");
   intro.className = "result-intro";
   const introText = document.createElement("div");
-  introText.append(head, desc);
+  introText.append(meta, name, desc);
   intro.append(sprite, introText);
 
   card.append(intro, reason);
@@ -281,7 +358,7 @@ async function showResult() {
   showScreen("result");
 }
 
-// 답을 쿼리스트링에 담은 공유 링크 (링크로 들어왔을 때 결과 복원은 5단계)
+// 답을 쿼리스트링에 담은 공유 링크
 function buildShareUrl() {
   const params = new URLSearchParams();
   [...REQUIRED_QUESTIONS, ...DETAIL_QUESTIONS].forEach(({ key }) => {
@@ -289,6 +366,21 @@ function buildShareUrl() {
   });
   params.set("trend", answers.trendFirst ? "1" : "0");
   return `${location.origin}${location.pathname}?${params}`;
+}
+
+// 공유 링크의 쿼리스트링을 답 객체로 되돌린다. 필수 답이 빠졌거나 없는 선택지면 null
+function answersFromUrl(search) {
+  const params = new URLSearchParams(search);
+  const restored = createAnswers();
+  for (const { key, options } of [...REQUIRED_QUESTIONS, ...DETAIL_QUESTIONS]) {
+    const value = params.get(key);
+    if (value === null) continue;
+    if (!options.includes(value)) return null;
+    restored[key] = value;
+  }
+  if (REQUIRED_QUESTIONS.some(({ key }) => !restored[key])) return null;
+  restored.trendFirst = params.get("trend") !== "0";
+  return restored;
 }
 
 async function copyShareLink() {
@@ -321,8 +413,21 @@ document.getElementById("trend-toggle").addEventListener("change", (event) => {
   answers.trendFirst = event.target.checked;
 });
 
+renderParade();
+
+const RESULT_SUB_DEFAULT = document.getElementById("result-sub").textContent;
+const sharedAnswers = answersFromUrl(location.search);
+if (sharedAnswers) {
+  answers = sharedAnswers;
+  document.getElementById("result-sub").textContent = "공유받은 결과예요. 나도 해 보려면 아래 '다시 하기'를 눌러요.";
+  showResult();
+}
+
 dataReady
-  .then(({ trendsFile, exercises }) => renderTrends(trendsFile, exercises))
+  .then(({ trendsFile, exercises }) => {
+    document.getElementById("stat-count").textContent = exercises.length;
+    renderTrends(trendsFile, exercises);
+  })
   .catch((error) => {
     console.error(error);
     renderTrendMessage("트렌드 정보를 불러오지 못했어요.");
