@@ -2,13 +2,15 @@
 const REQUIRED_QUESTIONS = [
   {
     key: "purpose",
-    title: "운동하는 가장 큰 목적은 무엇인가요?",
+    title: "운동하는 목적은 무엇인가요?",
+    sub: "최대 3개까지 고를 수 있어요.",
     options: ["다이어트", "근력", "유연성·자세", "스트레스 해소", "사람 만나기"],
+    maxSelect: 3,
   },
   {
     key: "activity",
     title: "어느 정도로 움직이고 싶나요?",
-    options: ["정적·가볍게", "적당히", "동적·땀 흠뻑"],
+    options: ["정적·가볍게", "적당히", "동적·땀 흠뻑", "상관없음"],
   },
   {
     key: "people",
@@ -23,7 +25,7 @@ const REQUIRED_QUESTIONS = [
   {
     key: "time",
     title: "한 번에 얼마나 운동할 수 있나요?",
-    options: ["15분 이하", "30분", "1시간 이상"],
+    options: ["15분 이하", "30분", "1시간 이상", "상관없음"],
   },
 ];
 
@@ -37,13 +39,20 @@ const DETAIL_QUESTIONS = [
 
 const FINISH_STEP = REQUIRED_QUESTIONS.length;
 
+// 여러 개 고르는 질문(목적)은 답을 배열로 둔다
+const isMulti = (question) => Boolean(question.maxSelect);
+
 function createAnswers() {
   const answers = { trendFirst: true };
-  [...REQUIRED_QUESTIONS, ...DETAIL_QUESTIONS].forEach(({ key }) => {
-    answers[key] = null;
+  [...REQUIRED_QUESTIONS, ...DETAIL_QUESTIONS].forEach((question) => {
+    answers[question.key] = isMulti(question) ? [] : null;
   });
   return answers;
 }
+
+const isAnswered = (value) => (Array.isArray(value) ? value.length > 0 : Boolean(value));
+const isSelected = (key, value) =>
+  Array.isArray(answers[key]) ? answers[key].includes(value) : answers[key] === value;
 
 let answers = createAnswers();
 let currentStep = 0;
@@ -107,13 +116,23 @@ const OPTION_EMOJI = {
   "1시간 이상": "⌛",
 };
 
-const PARADE_IDS = ["running", "yoga", "climbing", "badminton", "cycling"];
+const PARADE_COUNT = 5;
 
-// 메인 캐릭터 줄: 마우스를 올리거나(PC) 탭하면(모바일) 운동 이름 말풍선이 뜬다
+// 전체 운동 중 무작위로 몇 개를 고른다 (Fisher–Yates 섞기)
+function pickRandom(list, count) {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, count);
+}
+
+// 메인 캐릭터 줄: 방문할 때마다 무작위 5개. 마우스를 올리거나(PC) 탭하면(모바일) 운동 이름 말풍선이 뜬다
 function renderParade(namesById) {
   const parade = document.getElementById("hero-parade");
   parade.replaceChildren(
-    ...PARADE_IDS.map((id, index) => {
+    ...pickRandom([...namesById.keys()], PARADE_COUNT).map((id, index) => {
       const name = namesById.get(id) ?? "";
       const item = document.createElement("span");
       item.className = "parade-item";
@@ -177,7 +196,7 @@ function renderTrends({ updatedAt, trends }, exercises) {
 
   // exercises.json에 없는 id는 이름을 알 수 없으니 건너뛴다
   const namesById = new Map(exercises.map((exercise) => [exercise.id, exercise.name]));
-  const top = trends.filter((trend) => namesById.has(trend.id)).slice(0, 3);
+  const top = trends.filter((trend) => namesById.has(trend.id)).slice(0, 5);
   if (top.length === 0) {
     renderTrendMessage("이번 주 트렌드를 준비 중이에요.");
     return;
@@ -230,7 +249,7 @@ function createOptionButton(key, value, { rich = false } = {}) {
   }
   button.dataset.key = key;
   button.dataset.value = value;
-  const selected = answers[key] === value;
+  const selected = isSelected(key, value);
   button.classList.toggle("is-selected", selected);
   button.setAttribute("aria-pressed", String(selected));
   return button;
@@ -258,8 +277,31 @@ function renderQuestionStep() {
   const question = REQUIRED_QUESTIONS[currentStep];
   document.getElementById("step-label").textContent = `Q${currentStep + 1}`;
   document.getElementById("question-title").textContent = question.title;
+  const sub = document.getElementById("question-sub");
+  sub.hidden = !question.sub;
+  sub.textContent = question.sub ?? "";
+  renderQuestionOptions();
+}
+
+// 선택지만 다시 그린다 (여러 개 고르는 질문은 화면 이동 없이 선택 상태만 바뀐다)
+function renderQuestionOptions() {
+  const question = REQUIRED_QUESTIONS[currentStep];
   const options = document.getElementById("question-options");
   options.replaceChildren(...question.options.map((value) => createOptionButton(question.key, value, { rich: true })));
+
+  const next = document.getElementById("question-next");
+  next.hidden = !isMulti(question);
+  next.disabled = !isAnswered(answers[question.key]);
+  if (isMulti(question)) {
+    const count = answers[question.key].length;
+    next.textContent = count > 0 ? `${count}개 선택 · 다음 →` : "다음 →";
+  }
+}
+
+function goNext() {
+  if (!isAnswered(answers[REQUIRED_QUESTIONS[currentStep]?.key])) return;
+  currentStep += 1;
+  renderQuestionStep();
 }
 
 function renderDetailQuestions() {
@@ -318,9 +360,21 @@ function selectOption(button) {
     return;
   }
 
+  const question = REQUIRED_QUESTIONS.find((item) => item.key === key);
+  if (isMulti(question)) {
+    // 다시 누르면 해제, 최대 개수를 넘으면 가장 먼저 고른 것을 빼고 새로 고른 것을 넣는다
+    const selected = answers[key];
+    if (selected.includes(value)) {
+      answers[key] = selected.filter((item) => item !== value);
+    } else {
+      answers[key] = [...selected, value].slice(-question.maxSelect);
+    }
+    renderQuestionOptions();
+    return;
+  }
+
   answers[key] = value;
-  currentStep += 1;
-  renderQuestionStep();
+  goNext();
 }
 
 function createResultCard(result, index) {
@@ -454,7 +508,8 @@ async function showResult() {
 function answersToParams(source) {
   const params = new URLSearchParams();
   [...REQUIRED_QUESTIONS, ...DETAIL_QUESTIONS].forEach(({ key }) => {
-    if (source[key]) params.set(key, source[key]);
+    // 여러 개 답은 쉼표로 이어 붙인다 (선택지 이름에는 쉼표가 없다)
+    if (isAnswered(source[key])) params.set(key, [].concat(source[key]).join(","));
   });
   params.set("trend", source.trendFirst ? "1" : "0");
   return params;
@@ -478,13 +533,20 @@ function buildInviteUrl() {
 function answersFromUrl(search) {
   const params = new URLSearchParams(search);
   const restored = createAnswers();
-  for (const { key, options } of [...REQUIRED_QUESTIONS, ...DETAIL_QUESTIONS]) {
+  for (const question of [...REQUIRED_QUESTIONS, ...DETAIL_QUESTIONS]) {
+    const { key, options } = question;
     const value = params.get(key);
     if (value === null) continue;
+    if (isMulti(question)) {
+      const values = [...new Set(value.split(","))];
+      if (values.length > question.maxSelect || !values.every((item) => options.includes(item))) return null;
+      restored[key] = values;
+      continue;
+    }
     if (!options.includes(value)) return null;
     restored[key] = value;
   }
-  if (REQUIRED_QUESTIONS.some(({ key }) => !restored[key])) return null;
+  if (REQUIRED_QUESTIONS.some(({ key }) => !isAnswered(restored[key]))) return null;
   restored.trendFirst = params.get("trend") !== "0";
   return restored;
 }
@@ -716,6 +778,7 @@ document.addEventListener("click", (event) => {
     start: startQuiz,
     restart,
     prev: goPrev,
+    next: goNext,
     "show-result": showResult,
     share: shareResult,
     invite: inviteFriend,

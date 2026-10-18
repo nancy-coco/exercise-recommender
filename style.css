@@ -534,6 +534,17 @@ body {
   gap: 12px;
 }
 
+.next-btn {
+  margin-top: 20px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
 .option {
   display: flex;
   align-items: center;

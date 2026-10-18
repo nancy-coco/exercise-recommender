@@ -24,15 +24,19 @@ function matchesField(exercise, key, value) {
   return Array.isArray(field) ? field.includes(value) : field === value;
 }
 
+// 답은 하나(문자열)일 수도, 여러 개(목적처럼 배열)일 수도 있다
+const toList = (value) => [].concat(value ?? []).filter(Boolean);
+
 function scoreExercise(exercise, answers, trendIds) {
   let score = 0;
   const matched = [];
 
   Object.entries(WEIGHTS).forEach(([key, weight]) => {
-    const value = answers[key];
+    const values = toList(answers[key]);
     // 답하지 않았거나 "상관없음"이면 점수 계산에서 제외
-    if (!value || value === ANY) return;
-    if (matchesField(exercise, key, value)) {
+    if (values.length === 0 || values.includes(ANY)) return;
+    // 여러 개를 골랐으면 하나만 맞아도 점수를 준다 (여러 개 맞아도 쌓이지 않는다)
+    if (values.some((value) => matchesField(exercise, key, value))) {
       score += weight;
       matched.push(key);
     }
@@ -54,8 +58,11 @@ function hashString(text) {
   return hash >>> 0;
 }
 
+// 고른 순서가 달라도 같은 답이면 같은 seed가 나오도록 여러 개 답은 정렬한다
 function answersSeed(answers) {
-  return [...Object.keys(WEIGHTS), "trendFirst"].map((key) => answers[key] ?? "").join("|");
+  return [...Object.keys(WEIGHTS), "trendFirst"]
+    .map((key) => (Array.isArray(answers[key]) ? [...answers[key]].sort().join(",") : answers[key] ?? ""))
+    .join("|");
 }
 
 function recommend(exercises, answers, trendIds = new Set(), count = 3) {
@@ -99,11 +106,15 @@ const DETAIL_PHRASES = {
 
 // 일치한 항목만으로 추천 이유를 만든다
 // 예: "혼자, 집에서, 15분 안에 할 수 있는 다이어트 운동이에요."
-function buildReason({ matched, isTrend }, answers) {
+// 목적을 여러 개 골랐으면 이 운동과 맞는 목적만 이어 붙인다 (예: "다이어트·근력")
+function buildReason({ exercise, matched, isTrend }, answers) {
   const conditions = ["people", "place", "activity", "time"]
     .filter((key) => matched.includes(key))
     .map((key) => CONDITION_PHRASES[key][answers[key]]);
-  const purpose = matched.includes("purpose") ? `${PURPOSE_PHRASES[answers.purpose]} ` : "";
+  const matchedPurposes = toList(answers.purpose).filter((value) => !exercise || exercise.purpose.includes(value));
+  const purpose = matched.includes("purpose")
+    ? `${matchedPurposes.map((value) => PURPOSE_PHRASES[value]).join("·")} `
+    : "";
 
   let main;
   if (conditions.length > 0) {
@@ -143,8 +154,11 @@ const EXERCISE_TYPES = {
 
 const PEOPLE_MODIFIERS = { 혼자: "혼자서도 잘하는", 함께: "함께라서 신나는", [ANY]: "어디서든 즐기는" };
 
+// 목적을 여러 개 골랐으면 처음 고른 목적, 활동성이 "상관없음"이면 "적당히" 기준으로 유형을 정한다
 function getExerciseType(answers) {
-  const type = EXERCISE_TYPES[`${answers.purpose}|${answers.activity}`];
+  const [mainPurpose] = toList(answers.purpose);
+  const activity = answers.activity === ANY ? "적당히" : answers.activity;
+  const type = EXERCISE_TYPES[`${mainPurpose}|${activity}`];
   if (!type) return null;
   const modifier = PEOPLE_MODIFIERS[answers.people];
   return { ...type, title: modifier ? `${modifier} ${type.name}` : type.name };

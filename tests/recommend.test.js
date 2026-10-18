@@ -7,13 +7,29 @@ const trendsFile = require("../data/trends.json");
 
 const trendIds = new Set(trendsFile.trends.map((trend) => trend.id));
 
-const REQUIRED = {
-  purpose: ["다이어트", "근력", "유연성·자세", "스트레스 해소", "사람 만나기"],
-  activity: ["정적·가볍게", "적당히", "동적·땀 흠뻑"],
+const PURPOSES = ["다이어트", "근력", "유연성·자세", "스트레스 해소", "사람 만나기"];
+
+// 목적은 1~3개를 고를 수 있으므로 가능한 모든 조합(5 + 10 + 10 = 25가지)
+function subsets(list, maxSize) {
+  const result = [];
+  const walk = (start, current) => {
+    if (current.length > 0) result.push([...current]);
+    if (current.length === maxSize) return;
+    for (let i = start; i < list.length; i += 1) walk(i + 1, [...current, list[i]]);
+  };
+  walk(0, []);
+  return result;
+}
+
+const REQUIRED_BASE = {
+  activity: ["정적·가볍게", "적당히", "동적·땀 흠뻑", "상관없음"],
   people: ["혼자", "함께", "상관없음"],
   place: ["집", "헬스장·스튜디오", "야외", "상관없음"],
-  time: ["15분 이하", "30분", "1시간 이상"],
+  time: ["15분 이하", "30분", "1시간 이상", "상관없음"],
 };
+const REQUIRED = { purpose: subsets(PURPOSES, 3), ...REQUIRED_BASE };
+// 세부항목 전체 조합과 곱할 때는 목적 1개짜리만 써서 테스트 시간을 줄인다
+const REQUIRED_SINGLE_PURPOSE = { purpose: PURPOSES.map((purpose) => [purpose]), ...REQUIRED_BASE };
 
 // 세부항목은 null(선택 안 함)도 포함
 const DETAIL = {
@@ -50,33 +66,61 @@ test("운동 데이터 id가 중복되지 않고, trends.json의 id는 모두 �
   trendIds.forEach((id) => assert.ok(ids.includes(id), `${id}가 exercises.json에 없음`));
 });
 
-test("모든 답 조합에서 결과 3개가 겹치지 않고, 점수순이며, 이유 문장이 정상이다", () => {
+function checkResults(answers) {
+  const results = recommend(exercises, answers, trendIds);
+  const label = JSON.stringify(answers);
+
+  assert.equal(results.length, 3, label);
+  assert.equal(new Set(results.map((r) => r.exercise.id)).size, 3, label);
+  for (let i = 1; i < results.length; i += 1) {
+    assert.ok(results[i - 1].score >= results[i].score, label);
+  }
+
+  results.forEach((result) => {
+    if (answers.lowImpact === LOW_IMPACT_ONLY) assert.equal(result.exercise.lowImpact, true, label);
+    const { main, extras } = buildReason(result, answers);
+    const text = [main, ...extras].join(" ");
+    assert.ok(main.length > 0, label);
+    assert.ok(!/undefined|null|··|\s·|·\s/.test(text), `${label} → ${text}`);
+  });
+}
+
+test("필수 질문 모든 조합(목적 1~3개 포함)에서 결과 3개가 겹치지 않고, 점수순이며, 이유 문장이 정상이다", () => {
   let checked = 0;
   for (const required of combinations(REQUIRED)) {
-    for (const detail of combinations(DETAIL)) {
-      for (const trendFirst of [true, false]) {
-        const answers = answersOf(required, detail, trendFirst);
-        const results = recommend(exercises, answers, trendIds);
-        const label = JSON.stringify(answers);
-
-        assert.equal(results.length, 3, label);
-        assert.equal(new Set(results.map((r) => r.exercise.id)).size, 3, label);
-        for (let i = 1; i < results.length; i += 1) {
-          assert.ok(results[i - 1].score >= results[i].score, label);
-        }
-
-        results.forEach((result) => {
-          if (answers.lowImpact === LOW_IMPACT_ONLY) assert.equal(result.exercise.lowImpact, true, label);
-          const { main, extras } = buildReason(result, answers);
-          const text = [main, ...extras].join(" ");
-          assert.ok(main.length > 0, label);
-          assert.ok(!/undefined|null/.test(text), `${label} → ${text}`);
-        });
-        checked += 1;
-      }
+    for (const trendFirst of [true, false]) {
+      checkResults(answersOf(required, {}, trendFirst));
+      checked += 1;
     }
   }
-  assert.equal(checked, 540 * 324 * 2);
+  assert.equal(checked, 25 * 4 * 3 * 4 * 4 * 2);
+});
+
+test("세부항목 모든 조합에서도 결과와 이유 문장이 정상이다", () => {
+  let checked = 0;
+  for (const required of combinations(REQUIRED_SINGLE_PURPOSE)) {
+    for (const detail of combinations(DETAIL)) {
+      checkResults(answersOf(required, detail, true));
+      checked += 1;
+    }
+  }
+  assert.equal(checked, 5 * 4 * 3 * 4 * 4 * 324);
+});
+
+test("목적 여러 개: 하나만 맞아도 3점(쌓이지 않음), 고른 순서는 결과에 영향 없음, 이유에는 맞는 목적만", () => {
+  const pilates = exercises.find((exercise) => exercise.id === "pilates"); // 목적: 유연성·자세, 근력
+  const base = { activity: "상관없음", people: "상관없음", place: "상관없음", time: "상관없음", trendFirst: false };
+
+  const [one] = recommend([pilates], { ...base, purpose: ["근력"] });
+  const [two] = recommend([pilates], { ...base, purpose: ["근력", "유연성·자세", "다이어트"] });
+  assert.equal(one.score, 3);
+  assert.equal(two.score, 3);
+
+  const answers = { ...base, purpose: ["다이어트", "근력", "유연성·자세"] };
+  assert.equal(buildReason(two, answers).main, "근력·자세 교정 목적에 잘 맞는 운동이에요.");
+
+  const ids = (purpose) => recommend(exercises, { ...base, purpose }, trendIds).map((r) => r.exercise.id);
+  assert.deepEqual(ids(["다이어트", "근력"]), ids(["근력", "다이어트"]));
 });
 
 test("점수: 목적 3점, 필수 2점, 세부 1점, 상관없음 제외, 트렌드 +2점", () => {
@@ -143,7 +187,7 @@ test("추천 이유가 PRD 예시 문장 형태로 만들어진다", () => {
   assert.equal(reason.main, "혼자, 집에서, 15분 안에 할 수 있는 다이어트 운동이에요.");
 });
 
-test("목적 × 활동성 15가지 모두 운동 유형이 있고, 인원에 따라 앞말이 붙는다", () => {
+test("목적 × 활동성(상관없음 포함) 모두 운동 유형이 있고, 인원에 따라 앞말이 붙는다", () => {
   const { getExerciseType } = require("../recommend.js");
   for (const purpose of REQUIRED.purpose) {
     for (const activity of REQUIRED.activity) {
@@ -156,6 +200,8 @@ test("목적 × 활동성 15가지 모두 운동 유형이 있고, 인원에 따
     }
   }
   assert.equal(getExerciseType({ purpose: "사람 만나기", activity: "동적·땀 흠뻑", people: "함께" }).title, "함께라서 신나는 열정 팀플레이어");
+  // 목적을 여러 개 고르면 처음 고른 목적으로 유형을 정한다
+  assert.equal(getExerciseType({ purpose: ["근력", "다이어트"], activity: "적당히", people: "혼자" }).name, "성실한 근육 저축러");
 });
 
 test("친구와 같이 할 운동: 3개, 순서를 바꿔도 같은 결과, 둘 중 한 명이라도 부담 제외면 제외", () => {
