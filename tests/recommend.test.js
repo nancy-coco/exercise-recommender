@@ -142,3 +142,30 @@ test("추천 이유가 PRD 예시 문장 형태로 만들어진다", () => {
   const reason = buildReason({ matched: ["purpose", "people", "place", "time"], isTrend: false }, answers);
   assert.equal(reason.main, "혼자, 집에서, 15분 안에 할 수 있는 다이어트 운동이에요.");
 });
+
+test("목적 × 활동성 15가지 모두 운동 유형이 있고, 인원에 따라 앞말이 붙는다", () => {
+  const { getExerciseType } = require("../recommend.js");
+  for (const purpose of REQUIRED.purpose) {
+    for (const activity of REQUIRED.activity) {
+      for (const people of REQUIRED.people) {
+        const type = getExerciseType({ purpose, activity, people });
+        assert.ok(type, `${purpose}/${activity} 유형 없음`);
+        assert.ok(type.emoji && type.desc, `${purpose}/${activity} 설명 없음`);
+        assert.ok(type.title.endsWith(type.name) && type.title.length > type.name.length);
+      }
+    }
+  }
+  assert.equal(getExerciseType({ purpose: "사람 만나기", activity: "동적·땀 흠뻑", people: "함께" }).title, "함께라서 신나는 열정 팀플레이어");
+});
+
+test("친구와 같이 할 운동: 3개, 순서를 바꿔도 같은 결과, 둘 중 한 명이라도 부담 제외면 제외", () => {
+  const { recommendTogether } = require("../recommend.js");
+  const me = { purpose: "사람 만나기", activity: "동적·땀 흠뻑", people: "함께", place: "야외", time: "1시간 이상", trendFirst: true };
+  const friend = { purpose: "스트레스 해소", activity: "정적·가볍게", people: "상관없음", place: "상관없음", time: "30분", lowImpact: LOW_IMPACT_ONLY, trendFirst: false };
+
+  const ids = (results) => results.map((r) => r.exercise.id);
+  const together = recommendTogether(exercises, me, friend, trendIds);
+  assert.equal(together.length, 3);
+  assert.deepEqual(ids(recommendTogether(exercises, friend, me, trendIds)), ids(together));
+  together.forEach((r) => assert.equal(r.exercise.lowImpact, true, r.exercise.id));
+});

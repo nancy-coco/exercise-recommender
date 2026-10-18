@@ -411,6 +411,22 @@ function createSprite(exerciseId, label) {
   return svg;
 }
 
+// 결과 이미지 저장용: 캔버스에 같은 그림을 그린다 (size는 16의 배수여야 선명하다)
+function drawSprite(ctx, exerciseId, x, y, size) {
+  const pixel = size / SPRITE_SIZE;
+  const { scene, colors, layers } = spriteLayers(exerciseId);
+  ctx.fillStyle = scene.sky;
+  ctx.fillRect(x, y, size, size - pixel);
+  ctx.fillStyle = scene.ground;
+  ctx.fillRect(x, y + size - pixel, size, pixel);
+  layers.forEach((rows) =>
+    rowsToRects(rows, colors).forEach((rect) => {
+      ctx.fillStyle = rect.fill;
+      ctx.fillRect(x + rect.x * pixel, y + rect.y * pixel, rect.width * pixel, pixel);
+    })
+  );
+}
+
 if (typeof module !== "undefined") {
   module.exports = { SPRITE_SIZE, BASE_COLORS, POSES, PROPS, SCENES, EXERCISE_SPRITES, spriteLayers };
 }
