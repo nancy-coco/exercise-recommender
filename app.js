@@ -753,7 +753,6 @@ function closeImageModal() {
 async function saveImage() {
   setStatus("이미지를 만드는 중이에요…");
   const canvas = await drawResultImage();
-  const isTouch = window.matchMedia("(pointer: coarse)").matches;
   if (isInAppBrowser()) {
     showImageModal(canvas);
     return;
@@ -766,27 +765,9 @@ async function saveImage() {
   }
   // 한글 파일 이름을 제대로 다루지 못하는 기기가 있어 영문 이름을 쓴다
   const fileName = "my-workout-type.png";
-  const file = new File([blob], fileName, { type: "image/png" });
 
-  // 휴대폰: 공유창(사진 저장·인스타·카톡). 지원하지 않거나 실패하면 길게 눌러 저장하는 화면을 띄운다
-  if (isTouch) {
-    if (navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file] });
-        setStatus("");
-        return;
-      } catch (error) {
-        if (error.name === "AbortError") {
-          setStatus("");
-          return;
-        }
-      }
-    }
-    showImageModal(canvas);
-    return;
-  }
-
-  // PC: 파일 다운로드. 링크를 문서에 붙였다가 떼고, 임시 주소는 다운로드가 끝날 만큼 넉넉히 기다린 뒤 지운다
+  // 휴대폰 일반 브라우저와 PC 모두 바로 파일로 저장한다 (공유는 "결과 공유하기" 버튼이 맡는다)
+  // 링크를 문서에 붙였다가 떼고, 임시 주소는 다운로드가 끝날 만큼 넉넉히 기다린 뒤 지운다
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
