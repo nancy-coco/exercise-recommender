@@ -1,31 +1,31 @@
 {
-  "updatedAt": "2026-10-18",
+  "updatedAt": "2026-10-19",
   "source": "newsdata.io",
   "trends": [
     {
       "id": "running",
-      "count": 32,
-      "reason": "최근 생활 운동 뉴스 약 32건에 등장했어요."
-    },
-    {
-      "id": "cycling",
-      "count": 18,
-      "reason": "최근 생활 운동 뉴스 약 18건에 등장했어요."
+      "count": 56,
+      "reason": "최근 생활 운동 뉴스 약 56건에 등장했어요."
     },
     {
       "id": "walking",
-      "count": 17,
-      "reason": "최근 생활 운동 뉴스 약 17건에 등장했어요."
+      "count": 29,
+      "reason": "최근 생활 운동 뉴스 약 29건에 등장했어요."
     },
     {
-      "id": "hiking",
-      "count": 7,
-      "reason": "최근 생활 운동 뉴스 약 7건에 등장했어요."
+      "id": "cycling",
+      "count": 15,
+      "reason": "최근 생활 운동 뉴스 약 15건에 등장했어요."
+    },
+    {
+      "id": "yoga",
+      "count": 10,
+      "reason": "최근 생활 운동 뉴스 약 10건에 등장했어요."
     },
     {
       "id": "plogging",
-      "count": 6,
-      "reason": "최근 생활 운동 뉴스 약 6건에 등장했어요."
+      "count": 8,
+      "reason": "최근 생활 운동 뉴스 약 8건에 등장했어요."
     }
   ]
 }

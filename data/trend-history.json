@@ -1,0 +1,53 @@
+{
+  "snapshots": [
+    {
+      "date": "2026-10-19",
+      "counts": {
+        "walking": 29,
+        "running": 56,
+        "running-crew": 1,
+        "home-training": 1,
+        "tabata": 0,
+        "stretching": 1,
+        "yoga": 10,
+        "pilates": 5,
+        "weight-training": 0,
+        "crossfit": 0,
+        "climbing": 0,
+        "swimming": 7,
+        "aqua-aerobics": 0,
+        "cycling": 15,
+        "indoor-cycling": 0,
+        "hiking": 6,
+        "trail-running": 1,
+        "jump-rope": 1,
+        "badminton": 3,
+        "tennis": 5,
+        "pickleball": 0,
+        "futsal": 1,
+        "basketball": 6,
+        "boxing": 5,
+        "jiu-jitsu": 0,
+        "dance-fitness": 0,
+        "kpop-dance": 1,
+        "barre": 0,
+        "foam-rolling": 1,
+        "tai-chi": 0,
+        "band-workout": 0,
+        "kettlebell": 0,
+        "stair-climbing": 3,
+        "plogging": 8,
+        "golf": 6,
+        "table-tennis": 3,
+        "inline-skating": 0,
+        "rowing": 0,
+        "outdoor-workout": 0,
+        "nordic-walking": 0,
+        "hot-yoga": 0,
+        "park-yoga": 0,
+        "calisthenics-routine": 0,
+        "online-group-workout": 0
+      }
+    }
+  ]
+}
