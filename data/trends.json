@@ -1,37 +1,37 @@
 {
-  "updatedAt": "2026-11-09",
+  "updatedAt": "2026-11-16",
   "source": "newsdata.io",
-  "comparedWith": "2026-11-02",
+  "comparedWith": "2026-11-09",
   "trends": [
     {
       "id": "running",
-      "count": 29,
-      "previous": 40,
-      "reason": "최근 생활 운동 뉴스 약 29건에 등장했어요."
+      "count": 23,
+      "previous": 29,
+      "reason": "최근 생활 운동 뉴스 약 23건에 등장했어요."
     },
     {
-      "id": "cycling",
-      "count": 11,
-      "previous": 5,
-      "reason": "지난주보다 뉴스가 120% 늘었어요. (5건 → 11건)"
+      "id": "hiking",
+      "count": 8,
+      "previous": 4,
+      "reason": "지난주보다 뉴스가 100% 늘었어요. (4건 → 8건)"
     },
     {
-      "id": "walking",
-      "count": 25,
-      "previous": 41,
-      "reason": "최근 생활 운동 뉴스 약 25건에 등장했어요."
-    },
-    {
-      "id": "golf",
+      "id": "plogging",
       "count": 6,
       "previous": 1,
       "reason": "지난주보다 뉴스가 500% 늘었어요. (1건 → 6건)"
     },
     {
-      "id": "swimming",
-      "count": 9,
-      "previous": 7,
-      "reason": "지난주보다 뉴스가 29% 늘었어요. (7건 → 9건)"
+      "id": "golf",
+      "count": 7,
+      "previous": 6,
+      "reason": "지난주보다 뉴스가 17% 늘었어요. (6건 → 7건)"
+    },
+    {
+      "id": "pilates",
+      "count": 5,
+      "previous": 2,
+      "reason": "지난주보다 뉴스가 150% 늘었어요. (2건 → 5건)"
     }
   ]
 }
